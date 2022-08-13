@@ -1,0 +1,17 @@
+USE [NGANHANG]
+GO
+
+/****** Object:  View [dbo].[V_CHI_NHANH]    Script Date: 7/17/2022 7:46:14 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE VIEW [dbo].[V_CHI_NHANH]
+as 
+SELECT MACN, TENCN FROM LINK0.NGANHANG.DBO.ChiNhanh
+
+GO
+
+

@@ -1,0 +1,125 @@
+﻿-- Thêm nhân viên
+ALTER PROC SP_THEM_NHANVIEN 
+	@MANV NCHAR(10), 
+	@HO NVARCHAR(50), 
+	@TEN NVARCHAR(10), 
+	@DIACHI NVARCHAR(100), 
+	@PHAI NVARCHAR(3), 
+	@SODT NVARCHAR(15)
+AS
+BEGIN
+	IF EXISTS(SELECT MANV FROM NhanVien WHERE SODT = @SODT AND HO = @HO AND TEN = @TEN AND TrangThaiXoa = 1) -- Chuyển nhân viên
+		UPDATE NhanVien
+		SET TrangThaiXoa = 0
+		WHERE SODT = @SODT AND HO = @HO AND TEN = @TEN AND TrangThaiXoa = 1
+
+	ELSE IF(SELECT COUNT(MANV) FROM NhanVien WHERE MANV = @MANV) > 0
+		RAISERROR(N'Mã nhân viên đã tồn tại ở chi nhánh hiện tại', 16, 1);
+
+	ELSE IF(SELECT COUNT(MANV) FROM LINK1.NGANHANG.DBO.NhanVien WHERE MANV = @MANV) > 0
+		RAISERROR(N'Mã nhân viên đã tồn tại ở chi nhánh khác', 16, 1);
+
+	ELSE
+		INSERT INTO NhanVien(MANV, HO, TEN, DIACHI, PHAI, SODT, MACN)
+		VALUES(@MANV, @HO, @TEN, @DIACHI, @PHAI, @SODT, (SELECT MACN FROM ChiNhanh))
+END
+
+EXEC SP_THEM_NHANVIEN 'aabb', 'af', 'asf', 'asdf', 'nam', 'asdf', 'benthanh', 'CHINHANH'
+-- Cập nhật nhân viên
+GO
+CREATE PROC [dbo].[SP_CAPNHAT_NHANVIEN] 
+	@MANV NCHAR(10), 
+	@HO NVARCHAR(50), 
+	@TEN NVARCHAR(10), 
+	@DIACHI NVARCHAR(100), 
+	@PHAI NVARCHAR(3), 
+	@SODT NVARCHAR(15), 
+	@TRANGTHAIXOA INT AS
+BEGIN
+	UPDATE NhanVien
+	SET HO = @HO, TEN = @TEN, DIACHI = @DIACHI, PHAI = @PHAI, SODT = @SODT, TrangThaiXoa = @TRANGTHAIXOA
+	WHERE MANV = @MANV
+END
+
+EXEC SP_CAPNHAT_NHANVIEN 'ntt', 'NGUYỄN', 'TÂN', 'BÌNH DƯƠNG', 'Nam', '000'
+-- Xóa nhân viên
+GO
+ALTER PROC SP_XOA_NHANVIEN @MANV NCHAR(10) AS
+BEGIN
+	IF 
+		EXISTS(SELECT MAGD FROM GD_CHUYENTIEN WHERE MANV = @MANV) 
+		OR EXISTS(SELECT MAGD FROM GD_GOIRUT WHERE MANV = @MANV) 
+		OR (EXISTS (SELECT name FROM sys.syslogins where name = @MANV) AND EXISTS (SELECT name FROM sys.sysusers where name = @MANV)) -- CÓ LOGIN
+	BEGIN
+		UPDATE NhanVien
+		SET TrangThaiXoa = 1
+		WHERE MANV = @MANV;
+		SELECT 0 AS KetQua -- Xóa mềm
+	END
+	ELSE
+	BEGIN
+		DELETE NhanVien
+		WHERE MANV = @MANV;
+		SELECT 1 AS KetQua -- Xóa cứng
+	END
+END
+
+SELECT * FROM sys.sysusers
+SELECT * FROM sys.sysmembers
+SELECT * FROM sys.syslogins
+EXEC SP_XOA_NHANVIEN 't3'
+-- Tạo login
+GO
+ALTER PROC [dbo].[SP_THEM_LOGIN] @LGNAME VARCHAR(10), @PASS VARCHAR(20), @USERNAME VARCHAR(10), @ROLE VARCHAR(10)
+AS
+BEGIN
+	DECLARE @RET INT
+	EXEC @RET= sp_addlogin @LGNAME, @PASS, 'NGANHANG'
+	IF (@RET = 1)  -- LOGIN NAME BI TRUNG
+	BEGIN
+		RAISERROR('Login name bị trùng', 16, 1)
+		RETURN 1
+	END
+ 
+	EXEC @RET= sp_grantdbaccess @LGNAME, @USERNAME
+	IF (@RET = 1)  -- USER NAME BI TRUNG
+	BEGIN
+		EXEC SP_DROPLOGIN @LGNAME
+		RAISERROR('User name bị trùng', 16, 1)
+		RETURN 2
+	END
+
+	EXEC sp_addrolemember @ROLE, @USERNAME
+	EXEC sp_addsrvrolemember @LGNAME, 'SecurityAdmin'
+	RETURN 0  -- THANH CONG
+END
+
+-- Xóa login
+GO
+CREATE PROC [dbo].[SP_XOA_LOGIN] @LGNAME VARCHAR(50), @USRNAME VARCHAR(50) AS
+BEGIN
+	EXEC sp_dropuser @USRNAME
+	EXEC sp_droplogin @LGNAME
+END
+
+EXEC SP_XOA_LOGIN 'ntt2', 'ntt2'
+
+-- Chuyển chi nhánh
+GO
+ALTER PROC SP_CHUYEN_CN_NHANVIEN 
+	@MANVCU NCHAR(9), 
+	@MANVMOI NCHAR(9), 
+	@HO NVARCHAR(50), 
+	@TEN NVARCHAR(10), 
+	@DIACHI NVARCHAR(100), 
+	@PHAI NVARCHAR(3), 
+	@SODT NVARCHAR(15)
+AS
+BEGIN
+	BEGIN
+	BEGIN DISTRIBUTED TRAN
+		EXEC LINK1.NGANHANG.DBO.SP_THEM_NHANVIEN @MANVMOI, @HO, @TEN, @DIACHI, @PHAI, @SODT -- Thêm nv vào chi nhánh mới
+		UPDATE NhanVien SET TrangThaiXoa = 1 WHERE MANV = @MANVCU -- Xóa nhân viên ở chi nhánh hiện tại
+	COMMIT TRAN
+	END
+END
